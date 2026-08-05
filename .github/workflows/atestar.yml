@@ -80,7 +80,7 @@ jobs:
             --schema molde/harness/schemas/protection-attestation.schema.json
 
       - name: Indeterminação não vira laudo
-        if: steps.auditar.outcome == 'failure' && steps.auditar.conclusion != 'success'
+        if: steps.auditar.outcome == 'failure'
         run: |
           set -euo pipefail
           if [ ! -f atestados/laudo.json ]; then

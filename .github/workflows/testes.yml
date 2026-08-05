@@ -1,0 +1,44 @@
+name: testes
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # O molde, quando alcançável. Sem ele os testes de SISTEMA — o molde consumindo o atestado —
+      # são pulados, e pulados eles não provam nada. O `continue-on-error` existe para que a falta
+      # de credencial não esconda os outros dois níveis, mas o passo seguinte diz em voz alta o que
+      # deixou de ser verificado: cobertura que some sem avisar é pior que cobertura ausente.
+      - name: Trazer o molde
+        id: molde
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: danzeroum/project
+          path: molde
+          token: ${{ secrets.PROJECT_READ_TOKEN || github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Testes
+        env:
+          MOLDE_ROOT: ${{ github.workspace }}/molde
+        run: python -m pytest tests -q
+
+      - name: Dizer o que não foi verificado
+        if: steps.molde.outcome != 'success'
+        run: |
+          echo "::warning::o molde não foi alcançado — os testes de SISTEMA (consumo do atestado) foram PULADOS. Eles são o nível que importa: um verificador correto cujo atestado o consumidor ignora é autoridade de papel."
