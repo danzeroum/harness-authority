@@ -551,8 +551,20 @@ def test_o_manifesto_pede_o_minimo_e_nada_alem():
         "pull_requests": "write",    # abrir o PR de entrega
     }
     assert m["public"] is False
-    assert m["hook_attributes"]["active"] is False
     assert m["default_events"] == []
+
+
+def test_o_manifesto_nao_declara_hook_attributes():
+    """Ausente, e não `{"active": false}` — que foi a primeira tentativa e o GitHub recusou.
+
+    Quando `hook_attributes` existe, o GitHub exige `url` DENTRO dele, e a recusa vem como
+    `Error "url" wasn't supplied` — que soa como se faltasse o `url` de topo, que estava lá. Sem a
+    chave, não há webhook e não há campo obrigatório a preencher. Declarar menos foi o conserto.
+    """
+    from authority import criar_app
+
+    m = json.loads(criar_app.MANIFESTO.read_text(encoding="utf-8"))
+    assert "hook_attributes" not in m
 
 
 def test_a_autoridade_nao_pede_ADMINISTRATION_write():
