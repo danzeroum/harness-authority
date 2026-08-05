@@ -65,6 +65,12 @@ EXIGIDAS_PADRAO = {
     "tag_regras_exigidas": ["deletion", "non_fast_forward", "update"],
     "tag_regras_proibidas": ["creation"],
     "branch_exige_review_de_code_owner": True,
+    # Contagem MÍNIMA, e ela é separada do code owner por uma razão que só apareceu ao ver a
+    # configuração real: `require_code_owner_review: true` com
+    # `required_approving_review_count: 0` é uma combinação representável, e o que ela exige
+    # na prática é ambíguo. Cobrar as duas remove a ambiguidade — "exige review" e "exige
+    # review DE ALGUÉM" são frases diferentes.
+    "branch_minimo_de_aprovacoes": 1,
     "branch_proibe_force_push": True,
     "bypass_deve_ser_vazio": True,
 }
@@ -114,6 +120,16 @@ def _protecao_por_ruleset(rulesets: list[dict], exigidas: dict) -> tuple[list[di
     for rs in cobrem:
         nome = rs.get("name") or f"ruleset:{rs.get('id')}"
         regras = {r.get("type"): (r.get("parameters") or {}) for r in (rs.get("rules") or [])}
+
+        aprovacoes = (regras.get("pull_request") or {}).get("required_approving_review_count")
+        if "pull_request" in regras and (aprovacoes or 0) < exigidas["branch_minimo_de_aprovacoes"]:
+            lacunas.append({
+                "codigo": "BRANCH-SEM-APROVACAO-EXIGIDA", "alvo": nome,
+                "detalhe": f"o ruleset exige pull request mas aceita {aprovacoes or 0} "
+                           f"aprovação(ões) — um PR pode ser integrado pelo próprio autor sem que "
+                           f"ninguém tenha olhado. Exigir PR sem exigir aprovação move o trabalho "
+                           f"de lugar sem acrescentar um par de olhos.",
+            })
 
         if "pull_request" not in regras:
             lacunas.append({

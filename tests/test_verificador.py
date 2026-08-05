@@ -132,7 +132,8 @@ def _ruleset_branch(**kw) -> dict:
         "id": 777, "name": "main protegida", "target": "branch", "enforcement": "active",
         "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"]}},
         "rules": [
-            {"type": "pull_request", "parameters": {"require_code_owner_review": True}},
+            {"type": "pull_request", "parameters": {"require_code_owner_review": True,
+                                                    "required_approving_review_count": 1}},
             {"type": "non_fast_forward"},
         ],
         "bypass_actors": [],
@@ -156,10 +157,27 @@ def test_branch_protegida_por_RULESET_sem_protecao_classica_e_conforme():
 
 
 def test_ruleset_de_branch_sem_code_owner_e_acusado():
-    rs = _ruleset_branch(rules=[{"type": "pull_request", "parameters": {}},
+    rs = _ruleset_branch(rules=[{"type": "pull_request",
+                                 "parameters": {"required_approving_review_count": 1}},
                                 {"type": "non_fast_forward"}])
     assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {
         "BRANCH-SEM-CODE-OWNER"}
+
+
+def test_pull_request_exigido_com_ZERO_aprovacoes_e_acusado():
+    """A configuração REAL do alvo em 05/08/2026, e o achado que a contagem revelou.
+
+    `pull_request` presente, `required_approving_review_count: 0`. O PR é obrigatório e pode ser
+    integrado pelo próprio autor sem que ninguém tenha olhado — exigir PR sem exigir aprovação
+    move o trabalho de lugar sem acrescentar um par de olhos. É representável, e por isso precisa
+    ser cobrado separado de `require_code_owner_review`.
+    """
+    rs = _ruleset_branch(rules=[
+        {"type": "pull_request", "parameters": {"require_code_owner_review": False,
+                                                "required_approving_review_count": 0}},
+        {"type": "non_fast_forward"}])
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {
+        "BRANCH-SEM-APROVACAO-EXIGIDA", "BRANCH-SEM-CODE-OWNER"}
 
 
 def test_ruleset_de_branch_sem_pull_request_e_acusado():
@@ -169,7 +187,8 @@ def test_ruleset_de_branch_sem_pull_request_e_acusado():
 
 def test_ruleset_de_branch_sem_bloqueio_de_force_push_e_acusado():
     rs = _ruleset_branch(rules=[{"type": "pull_request",
-                                 "parameters": {"require_code_owner_review": True}}])
+                                 "parameters": {"require_code_owner_review": True,
+                                                "required_approving_review_count": 1}}])
     assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {"BRANCH-FORCE-PUSH"}
 
 
