@@ -1,0 +1,7 @@
+# Mínimas e nomeadas: a autoridade não importa a cunhagem da própria credencial de uma action de
+# terceiro, e por isso precisa de PyJWT. jsonschema valida o atestado contra o schema REAL do molde
+# antes de emiti-lo — emitir um documento que o consumidor recusa é pior que não emitir.
+jsonschema>=4
+PyJWT[crypto]>=2.8
+pytest>=8
+pyyaml>=6

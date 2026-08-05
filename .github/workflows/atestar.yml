@@ -1,0 +1,131 @@
+name: atestar
+
+# A autoridade externa do danzeroum/project.
+#
+# A ORDEM É A DECISÃO, e ela tem uma assimetria: sem conseguir olhar, NADA é emitido. Um atestado
+# é afirmação positiva; não conseguir verificar não é uma afirmação. O job sai indeterminado e o
+# atestado anterior expira sozinho em 25h — que é o que faz um cron perdido se resolver sem
+# ninguém precisar perceber.
+
+on:
+  schedule:
+    # Diário. A validade do atestado é de 25h: o excedente de uma hora é o que transforma
+    # "o verificador não rodou" em "o atestado venceu", em vez de em silêncio.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # gravar o laudo NESTE repositório. Nunca no alvo — lá é PR.
+
+concurrency:
+  group: atestar
+  cancel-in-progress: false
+
+jobs:
+  atestar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # O schema do atestado é lido do CHECKOUT do molde, nunca de uma cópia daqui: uma cópia
+      # derivaria no primeiro dia em que o molde mudasse o contrato, e este verificador passaria a
+      # emitir documentos que o consumidor recusa — os dois lados convencidos de estarem certos.
+      - name: Trazer o molde (só para ler o schema)
+        uses: actions/checkout@v4
+        with:
+          repository: danzeroum/project
+          path: molde
+          token: ${{ secrets.PROJECT_READ_TOKEN || github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Cunhar a credencial e ler a identidade do emissor
+        env:
+          APP_ID: ${{ secrets.APP_ID }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_ID:-}" ] || [ -z "${PRIVATE_KEY:-}" ]; then
+            echo "::error::sem APP_ID/PRIVATE_KEY — a autoridade não tem como olhar o alvo, e sem olhar não atesta. Indeterminado por desenho."
+            exit 1
+          fi
+          python - <<'PY' >> "$GITHUB_ENV"
+          import os
+          from authority.app_token import cunhar
+          token, slug = cunhar(os.environ["APP_ID"], os.environ["PRIVATE_KEY"], "danzeroum/project")
+          print(f"::add-mask::{token}")
+          print(f"ALVO_TOKEN={token}")
+          print(f"ISSUER_IDENTITY={slug}")
+          PY
+
+      # Exit 0 = limpo (laudo + atestado) · 1 = lacuna (laudo, SEM atestado) · 3 = indeterminado.
+      # O `continue-on-error` existe para que a lacuna produza laudo publicado em vez de matar o
+      # job — lacuna é informação, e informação que não é publicada não existe.
+      - name: Auditar a proteção de refs
+        id: auditar
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ env.ALVO_TOKEN }}
+          ISSUER_IDENTITY: ${{ env.ISSUER_IDENTITY }}
+        run: |
+          python authority/verify_refs.py \
+            --repo danzeroum/project \
+            --laudo atestados/laudo.json \
+            --atestado atestados/protection-attestation.json \
+            --schema molde/harness/schemas/protection-attestation.schema.json
+
+      - name: Indeterminação não vira laudo
+        if: steps.auditar.outcome == 'failure' && steps.auditar.conclusion != 'success'
+        run: |
+          set -euo pipefail
+          if [ ! -f atestados/laudo.json ]; then
+            echo "::error::a auditoria não produziu laudo — não foi possível olhar. Nenhum atestado emitido, e o anterior expira em ≤25h."
+            exit 1
+          fi
+
+      - name: Registrar o laudo neste repositório
+        run: |
+          set -euo pipefail
+          git config user.name "harness-authority"
+          git config user.email "authority@users.noreply.github.com"
+          git add atestados/
+          git diff --cached --quiet && { echo "laudo idêntico ao anterior"; exit 0; }
+          git commit -m "laudo de proteção — $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push
+
+      - name: Entregar o atestado ao molde
+        if: hashFiles('atestados/protection-attestation.json') != ''
+        env:
+          GITHUB_TOKEN: ${{ env.ALVO_TOKEN }}
+        run: |
+          python authority/publicar.py \
+            --repo danzeroum/project \
+            --atestado atestados/protection-attestation.json
+
+      - name: Resumo
+        run: |
+          {
+            echo "### auditoria de $(date -u +%Y-%m-%d)"
+            echo ""
+            if [ -f atestados/protection-attestation.json ]; then
+              echo "Proteção **conforme** — atestado emitido e proposto ao molde."
+            else
+              echo "**Lacunas encontradas** — nenhum atestado emitido. Um atestado com ressalva"
+              echo "seria um \"sim, mas\" que o consumidor lê como sim."
+              echo ""
+              echo '```json'
+              python -c "import json;print(json.dumps(json.load(open('atestados/laudo.json'))['laudo']['lacunas'], indent=2, ensure_ascii=False))"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Refletir o resultado da auditoria
+        if: steps.auditar.outcome == 'failure'
+        run: |
+          echo "::warning::auditoria não conforme — ver o laudo. O molde bloqueia sozinho quando o atestado anterior expirar."
+          exit 1
