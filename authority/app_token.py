@@ -42,14 +42,52 @@ def montar_claims(app_id: str, agora: int | None = None) -> dict:
     return {"iat": t - 60, "exp": t + 540, "iss": str(app_id)}
 
 
+class NaoAlcanca(Exception):
+    """A credencial não chega ao alvo — e a mensagem diz QUAL das três razões.
+
+    Existe porque a primeira execução real falhou com um traceback de `HTTPError: 404` e nada mais.
+    Um 404 aqui tem três causas distintas, com três consertos distintos, e o rastro de pilha não
+    distingue nenhuma: chave errada, App não instalado, instalação sem acesso ao repositório.
+    Erro que não diz o que fazer transfere ao leitor o trabalho de descobrir.
+    """
+
+
 def cunhar(app_id: str, private_key_pem: str, repository: str) -> tuple[str, str]:
-    """Devolve (token_de_instalacao, slug_do_app). Levanta se a credencial não alcançar o alvo."""
+    """Devolve (token_de_instalacao, slug_do_app). Levanta NaoAlcanca com o motivo."""
+    import urllib.error
+
     import jwt  # PyJWT
 
     assinado = jwt.encode(montar_claims(app_id), private_key_pem, algorithm="RS256")
-    slug = _get(f"{API}/app", assinado).get("slug") or f"app-{app_id}"
+
+    try:
+        slug = _get(f"{API}/app", assinado).get("slug") or f"app-{app_id}"
+    except urllib.error.HTTPError as exc:
+        raise NaoAlcanca(
+            f"o GitHub não reconheceu a identidade do App (HTTP {exc.code}). APP_ID e PRIVATE_KEY "
+            f"precisam ser do MESMO App, e a chave precisa estar inteira — um .pem colado sem a "
+            f"linha final costuma produzir exatamente isto.") from exc
 
     dono, nome = repository.split("/", 1)
-    instalacao = _get(f"{API}/repos/{dono}/{nome}/installation", assinado)
-    concessao = _get(f"{API}/app/installations/{instalacao['id']}/access_tokens", assinado, "POST")
+    try:
+        instalacao = _get(f"{API}/repos/{dono}/{nome}/installation", assinado)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise NaoAlcanca(
+                f"o App '{slug}' NÃO está instalado em {repository}. Instalar é conceder acesso, e "
+                f"é o único passo que não se automatiza: "
+                f"https://github.com/apps/{slug}/installations/new — escolha 'Only select "
+                f"repositories' e marque {repository}.") from exc
+        raise NaoAlcanca(f"não foi possível resolver a instalação em {repository} "
+                         f"(HTTP {exc.code}).") from exc
+
+    try:
+        concessao = _get(f"{API}/app/installations/{instalacao['id']}/access_tokens",
+                         assinado, "POST")
+    except urllib.error.HTTPError as exc:
+        raise NaoAlcanca(
+            f"a instalação existe mas não emitiu token (HTTP {exc.code}) — normalmente é permissão "
+            f"que o App pede e a instalação ainda não aceitou. Reveja o acesso em "
+            f"https://github.com/settings/installations.") from exc
+
     return concessao["token"], slug

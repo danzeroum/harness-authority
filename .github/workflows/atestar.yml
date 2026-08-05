@@ -45,9 +45,16 @@ jobs:
             exit 1
           fi
           python - <<'PY' >> "$GITHUB_ENV"
-          import os
-          from authority.app_token import cunhar
-          token, slug = cunhar(os.environ["APP_ID"], os.environ["PRIVATE_KEY"], "danzeroum/project")
+          import os, sys
+          from authority.app_token import cunhar, NaoAlcanca
+          try:
+              token, slug = cunhar(os.environ["APP_ID"], os.environ["PRIVATE_KEY"],
+                                   "danzeroum/project")
+          except NaoAlcanca as exc:
+              # Sem credencial que alcance o alvo, NADA é emitido — e o motivo vai numa frase, não
+              # num traceback. O atestado anterior expira em ≤25h e o molde bloqueia sozinho.
+              print(f"::error::{exc}", file=sys.stderr)
+              sys.exit(1)
           print(f"::add-mask::{token}")
           print(f"ALVO_TOKEN={token}")
           print(f"ISSUER_IDENTITY={slug}")
