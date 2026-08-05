@@ -427,26 +427,31 @@ def test_atestado_fora_do_schema_bloqueia(molde_ligado):
 
 
 @precisa_do_molde
-def test_EMISSOR_NAO_AUTORIZADO_AINDA_PASSA_e_isto_esta_documentado(molde_ligado):
-    """A borda que o `<contexto>` mandou deixar vermelha e documentada — em forma de teste.
+def test_EMISSOR_NAO_AUTORIZADO_AGORA_BLOQUEIA(molde_ligado):
+    """A lacuna fechou, e este teste é o registro de que fechou — invertido, não apagado.
 
-    `check_external_attestation` valida existência, legibilidade, schema e validade. O campo
-    `issuer` é EXIGIDO pelo schema e NUNCA COMPARADO com nada. Hoje, um atestado emitido por
-    qualquer identidade passa — inclusive um escrito à mão num PR do próprio molde.
+    O que ele dizia até 05/08/2026: *`check_external_attestation` valida existência, legibilidade,
+    schema e validade; o campo `issuer` é EXIGIDO pelo schema e NUNCA COMPARADO com nada — hoje um
+    atestado emitido por qualquer identidade passa, inclusive um escrito à mão num PR do próprio
+    molde.* Ele afirmava esse comportamento de propósito e prometia virar vermelho no dia em que a
+    emenda `authorized_issuer` entrasse no molde.
 
-    Este teste afirma o comportamento ATUAL de propósito. Ele vira vermelho no dia em que a
-    emenda `authorized_issuer` entrar no molde, e ficar vermelho será a confirmação de que a
-    lacuna fechou. Um teste que descreve o buraco é mais honesto que um `skip` que o esconde.
+    Entrou (CP-036 / ADR-028 lá), ele ficou vermelho, e a inversão é a confirmação. Apagá-lo e
+    escrever um teste novo teria o mesmo efeito no CI e perderia a única coisa que ele carregava:
+    a data em que esta autoridade deixou de produzir "alguém atestou" e passou a produzir "quem
+    devia atestou".
+
+    O achado tem de ser o PRÓPRIO, não um genérico de invalidez: "isto envelheceu" e "alguém
+    escreveu isto à mão" pedem investigações diferentes, e só a segunda manda olhar o histórico do
+    arquivo e quem o tocou.
     """
     raiz, escrever = molde_ligado
     escrever(vr.montar_atestado(repository="danzeroum/project", exigidas=vr.EXIGIDAS_PADRAO,
                                 rulesets=[_ruleset()],
                                 issuer_identity="quem-quiser-escrever-isto",
                                 issuer_kind="external_service"))
-    bloqueantes = [a for a in _achados_de_conformidade(raiz) if a["severity"] != "info"]
-    assert not bloqueantes, (
-        "o molde passou a recusar emissor não declarado — a emenda authorized_issuer entrou, "
-        "e este teste deve ser invertido")
+    chaves = [a["id"] for a in _achados_de_conformidade(raiz) if a["severity"] != "info"]
+    assert "FIND-EXT-AUDIT-EMISSOR-NAO-AUTORIZADO" in chaves, chaves
 
 
 # --------------------------------------------------------------------------------------
