@@ -73,11 +73,26 @@ def cunhar(app_id: str, private_key_pem: str, repository: str) -> tuple[str, str
         instalacao = _get(f"{API}/repos/{dono}/{nome}/installation", assinado)
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
+            # O 404 aqui tem DUAS causas, e a primeira versão desta mensagem afirmava só a
+            # primeira — com confiança que a evidência não sustentava. Perguntar quantas
+            # instalações o App tem distingue as duas, e a diferença muda onde a pessoa clica.
+            try:
+                instalacoes = _get(f"{API}/app/installations", assinado)
+            except urllib.error.HTTPError:
+                instalacoes = []
+            if instalacoes:
+                onde = ", ".join(str((i.get("account") or {}).get("login")) for i in instalacoes)
+                raise NaoAlcanca(
+                    f"o App '{slug}' ESTÁ instalado ({len(instalacoes)} instalação(ões) em "
+                    f"{onde}), mas nenhuma delas alcança {repository} — instalar na conta e dar "
+                    f"acesso ao repositório são passos separados. Abra "
+                    f"https://github.com/settings/installations, clique em Configure no "
+                    f"'{slug}' e marque {repository} em 'Repository access'.") from exc
             raise NaoAlcanca(
-                f"o App '{slug}' NÃO está instalado em {repository}. Instalar é conceder acesso, e "
+                f"o App '{slug}' não está instalado em lugar nenhum. Instalar é conceder acesso, e "
                 f"é o único passo que não se automatiza: "
-                f"https://github.com/apps/{slug}/installations/new — escolha 'Only select "
-                f"repositories' e marque {repository}.") from exc
+                f"https://github.com/settings/apps/{slug}/installations — instale na sua conta e "
+                f"marque {repository}.") from exc
         raise NaoAlcanca(f"não foi possível resolver a instalação em {repository} "
                          f"(HTTP {exc.code}).") from exc
 
