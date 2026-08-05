@@ -43,8 +43,32 @@ rede é o CLI. Não é estilo: um verificador que faz I/O confunde *"a trava est
 ar: **nenhum atestado é emitido** e o job sai indeterminado.
 
 **Atestado só de estado limpo.** Havendo lacuna, sai **laudo** e não sai atestado. Um atestado com
-ressalva seria um *"sim, mas"* que o consumidor lê como sim. O laudo é onde a lacuna vive, com
-data — e é ele que fecha `RISK-EXT-001` no dia em que os rulesets forem ligados.
+ressalva seria um *"sim, mas"* que o consumidor lê como sim.
+
+## Lacuna e observação, e por que a distinção existe
+
+| | efeito |
+|---|---|
+| **lacuna** | configuração corrigível hoje e não corrigida — **impede** o atestado |
+| **observação** | condição que depende de gente, com risco datado — **registra** e não impede |
+
+A distinção custou um repositório congelado para ser aprendida. O `CODEOWNERS` do alvo já dizia,
+por escrito, que exigir review de code owner num repositório de um dono só não acrescenta revisor:
+o GitHub não deixa aprovar o próprio PR, então a regra tranca a `main` para a única pessoa que
+pode destrancá-la. *"Não é lacuna a fechar — é aritmética."* Este verificador exigiu assim mesmo,
+o dono executou, e nada mais pôde ser integrado até a reversão.
+
+A autoridade continua **vendo** a condição — deixar de vê-la seria fingir que o repositório está
+melhor do que está. O que mudou é o efeito, porque exigir o impossível transforma *"o atestado
+nunca sai"* em *"ninguém lê o laudo"*.
+
+**E a data é trava, não comentário.** Passado o prazo (`2026-11-03`, o mesmo do `RISK-CHANGE-002`),
+a observação vira lacuna e volta a bloquear. Uma dispensa sem vencimento é uma dispensa permanente
+com outro nome.
+
+**As dispensas entram no `config_digest`.** Um atestado emitido sob *"há uma pessoa só"* e um
+emitido sob *"há revisor independente"* descrevem repositórios diferentes; sem isso no digest,
+afrouxar a régua seria invisível no produto dela.
 
 ## Validade de 25h, e o excedente é a decisão
 

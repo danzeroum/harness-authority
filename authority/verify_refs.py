@@ -76,14 +76,78 @@ EXIGIDAS_PADRAO = {
 }
 
 
+# Condições que dependem de GENTE, não de configuração — e a distinção custou um repositório
+# congelado para ser aprendida.
+#
+# O `CODEOWNERS` do alvo já dizia, por escrito, que exigir review de code owner num repositório de
+# um dono só não acrescenta revisor: o GitHub não deixa aprovar o próprio PR, então a regra tranca
+# a main para a única pessoa que pode destrancá-la. "Não é lacuna a fechar — é aritmética." Este
+# verificador exigiu assim mesmo, o dono executou, e nada mais pôde ser integrado.
+#
+# A autoridade continua REPORTANDO essas condições: deixar de vê-las seria a autoridade fingindo
+# que o repositório está melhor do que está. O que muda é o efeito — elas não impedem o atestado,
+# porque exigir o impossível transforma "o atestado nunca sai" em "ninguém lê o laudo".
+#
+# E a data é TRAVA, não comentário: passado o prazo, a observação vira lacuna e volta a bloquear.
+# Uma dispensa sem vencimento é uma dispensa permanente com outro nome.
+OBSERVACOES_DATADAS = {
+    "BRANCH-SEM-CODE-OWNER": {
+        "ate": "2026-11-03",
+        "risco": "RISK-CHANGE-002",
+        "porque": "não há revisor humano independente: o único colaborador é também o autor de "
+                  "todas as propostas. Exigir aprovação aqui trancaria a main para a única pessoa "
+                  "que pode destrancá-la — quatro olhos exigem duas pessoas.",
+    },
+    "BRANCH-SEM-APROVACAO-EXIGIDA": {
+        "ate": "2026-11-03",
+        "risco": "RISK-CHANGE-002",
+        "porque": "mesma aritmética: uma contagem mínima de aprovações só é satisfazível por "
+                  "alguém que não seja o autor.",
+    },
+}
+
+
 # --------------------------------------------------------------------------------------
 # Núcleo puro
 # --------------------------------------------------------------------------------------
 
-def config_digest(exigidas: dict) -> str:
-    """Digest da configuração AVALIADA, não da encontrada. Muda a exigência, muda o digest — e um
-    atestado antigo deixa de poder ser lido como se falasse da regra nova."""
-    canonico = json.dumps(exigidas, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+def classificar(achados: list[dict], *, hoje: datetime | None = None,
+                observacoes: dict | None = None) -> list[dict]:
+    """Marca cada achado como `lacuna` (bloqueia o atestado) ou `observacao` (só registra).
+
+    Função à parte, e pura, para que a regra de dispensa seja legível de fora: quem audita esta
+    autoridade precisa conseguir ver QUAIS achados foram dispensados, POR QUE e ATÉ QUANDO, sem ler
+    o fluxo do CLI.
+    """
+    tabela = OBSERVACOES_DATADAS if observacoes is None else observacoes
+    agora = hoje or datetime.now(timezone.utc)
+    saida = []
+    for a in achados:
+        regra = tabela.get(a["codigo"])
+        vencida = regra and datetime.fromisoformat(regra["ate"] + "T00:00:00+00:00") < agora
+        if regra and not vencida:
+            saida.append({**a, "classe": "observacao", "dispensada_ate": regra["ate"],
+                          "risco": regra["risco"], "dispensa_porque": regra["porque"]})
+        else:
+            saida.append({**a, "classe": "lacuna",
+                          **({"dispensa_venceu_em": regra["ate"]} if vencida else {})})
+    return saida
+
+
+def bloqueantes(achados: list[dict]) -> list[dict]:
+    return [a for a in achados if a.get("classe", "lacuna") == "lacuna"]
+
+
+def config_digest(exigidas: dict, observacoes: dict | None = None) -> str:
+    """Digest do padrão APLICADO — exigências E dispensas.
+
+    As dispensas entram de propósito: um atestado emitido sob "há uma pessoa só" e um emitido sob
+    "há revisor independente" descrevem repositórios diferentes, e precisam ser distinguíveis por
+    quem os consome. Sem isso, afrouxar a régua seria invisível no produto dela.
+    """
+    tabela = OBSERVACOES_DATADAS if observacoes is None else observacoes
+    canonico = json.dumps({"exigidas": exigidas, "dispensas": tabela},
+                          sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(canonico.encode("utf-8")).hexdigest()
 
 
@@ -227,7 +291,7 @@ def verificar(*, rulesets: list[dict], protection: dict, exigidas: dict) -> list
     # está protegida por ruleset — a ausência na API clássica não é ausência de proteção.
     por_ruleset, havia_ruleset = _protecao_por_ruleset(rulesets, exigidas)
     if havia_ruleset:
-        return lacunas + por_ruleset
+        return classificar(lacunas + por_ruleset)
 
     if not protection:
         lacunas.append({
@@ -236,7 +300,7 @@ def verificar(*, rulesets: list[dict], protection: dict, exigidas: dict) -> list
                        "harness.yaml do alvo declara CODEOWNERS + branch protection como o fiscal "
                        "REAL dos protected_paths.",
         })
-        return lacunas
+        return classificar(lacunas)
 
     reviews = protection.get("required_pull_request_reviews")
     if not reviews:
@@ -263,7 +327,7 @@ def verificar(*, rulesets: list[dict], protection: dict, exigidas: dict) -> list
                        "conteúdo que pode ter mudado.",
         })
 
-    return lacunas
+    return classificar(lacunas)
 
 
 def ruleset_ref(*, repository: str, rulesets: list[dict], exigidas: dict) -> str:
@@ -320,8 +384,11 @@ def montar_laudo(*, repository: str, lacunas: list[dict], exigidas: dict,
             "checked_at": quando.isoformat(timespec="seconds"),
             "verifier_version": VERIFIER_VERSION,
             "config_digest": config_digest(exigidas),
-            "conforme": not lacunas,
-            "lacunas": lacunas,
+            # `conforme` fala do que BLOQUEIA. As observações aparecem ao lado, nunca somem — a
+            # autoridade não pode ficar mais silenciosa por ter dispensado alguma coisa.
+            "conforme": not bloqueantes(lacunas),
+            "lacunas": bloqueantes(lacunas),
+            "observacoes": [a for a in lacunas if a.get("classe") == "observacao"],
         },
     }
 
@@ -428,9 +495,13 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(laudo, fh, indent=2, ensure_ascii=False, sort_keys=True)
         fh.write("\n")
 
-    if lacunas:
-        print(f"✗ {args.repo}: {len(lacunas)} lacuna(s) — nenhum atestado emitido:", file=sys.stderr)
-        for l in lacunas:
+    impeditivas = bloqueantes(lacunas)
+    for o in [a for a in lacunas if a.get('classe') == 'observacao']:
+        print(f"• observação (dispensada até {o['dispensada_ate']}, {o['risco']}): "
+              f"[{o['codigo']}] {o['alvo']}", file=sys.stderr)
+    if impeditivas:
+        print(f"✗ {args.repo}: {len(impeditivas)} lacuna(s) — nenhum atestado emitido:", file=sys.stderr)
+        for l in impeditivas:
             print(f"  - [{l['codigo']}] {l['alvo']}: {l['detalhe']}", file=sys.stderr)
         return EXIT_LACUNA
 

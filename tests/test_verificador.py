@@ -447,3 +447,88 @@ def test_EMISSOR_NAO_AUTORIZADO_AINDA_PASSA_e_isto_esta_documentado(molde_ligado
     assert not bloqueantes, (
         "o molde passou a recusar emissor não declarado — a emenda authorized_issuer entrou, "
         "e este teste deve ser invertido")
+
+
+# --------------------------------------------------------------------------------------
+# OBSERVAÇÃO vs LACUNA — a distinção que custou um repositório congelado
+# --------------------------------------------------------------------------------------
+
+def _sem_code_owner() -> list[dict]:
+    rs = _ruleset_branch(rules=[
+        {"type": "pull_request", "parameters": {"require_code_owner_review": False,
+                                                "required_approving_review_count": 0}},
+        {"type": "non_fast_forward"}])
+    return _verificar(rulesets=[_ruleset(), rs], protection={})
+
+
+def test_a_falta_de_revisor_e_OBSERVACAO_e_nao_bloqueia():
+    """O CODEOWNERS do alvo já dizia por escrito: exigir review de code owner num repositório de
+    um dono só não acrescenta revisor — tranca a main para a única pessoa que pode destrancá-la.
+    Este verificador exigiu assim mesmo, o dono executou, e nada mais pôde ser integrado.
+
+    A autoridade continua VENDO a condição. O que mudou é o efeito.
+    """
+    achados = _sem_code_owner()
+    assert {a["codigo"] for a in achados} == {"BRANCH-SEM-CODE-OWNER",
+                                             "BRANCH-SEM-APROVACAO-EXIGIDA"}
+    assert all(a["classe"] == "observacao" for a in achados)
+    assert vr.bloqueantes(achados) == []
+
+
+def test_a_observacao_carrega_prazo_risco_e_motivo():
+    """Quem audita a AUTORIDADE precisa ver o que foi dispensado, por quê e até quando — sem ler
+    o fluxo do CLI."""
+    a = next(x for x in _sem_code_owner() if x["codigo"] == "BRANCH-SEM-CODE-OWNER")
+    assert a["dispensada_ate"] == "2026-11-03"
+    assert a["risco"] == "RISK-CHANGE-002"
+    assert "quatro olhos exigem duas pessoas" in a["dispensa_porque"]
+
+
+def test_passado_o_prazo_a_observacao_VOLTA_a_bloquear():
+    """A data é TRAVA, não comentário. Uma dispensa sem vencimento é uma dispensa permanente com
+    outro nome."""
+    depois = datetime(2026, 11, 4, tzinfo=timezone.utc)
+    reclassificados = vr.classificar(
+        [{"codigo": "BRANCH-SEM-CODE-OWNER", "alvo": "x", "detalhe": "y"}], hoje=depois)
+    assert reclassificados[0]["classe"] == "lacuna"
+    assert reclassificados[0]["dispensa_venceu_em"] == "2026-11-03"
+    assert vr.bloqueantes(reclassificados)
+
+
+def test_lacuna_real_continua_bloqueando_ao_lado_da_observacao():
+    """A dispensa é por CÓDIGO, não uma anistia geral: tags desprotegidas seguem impedindo."""
+    rs = _ruleset_branch(rules=[
+        {"type": "pull_request", "parameters": {"require_code_owner_review": False,
+                                                "required_approving_review_count": 0}},
+        {"type": "non_fast_forward"}])
+    achados = _verificar(rulesets=[rs], protection={})   # sem ruleset de TAG
+    assert {a["codigo"] for a in vr.bloqueantes(achados)} == {"TAG-SEM-RULESET"}
+
+
+def test_o_digest_muda_quando_a_DISPENSA_muda():
+    """Um atestado emitido sob 'há uma pessoa só' e um emitido sob 'há revisor independente'
+    descrevem repositórios diferentes. Sem isso no digest, afrouxar a régua seria invisível no
+    produto dela."""
+    assert vr.config_digest(vr.EXIGIDAS_PADRAO, {}) != vr.config_digest(vr.EXIGIDAS_PADRAO)
+
+
+def test_o_laudo_separa_as_duas_classes():
+    laudo = vr.montar_laudo(repository="o/r", lacunas=_sem_code_owner(),
+                            exigidas=vr.EXIGIDAS_PADRAO)["laudo"]
+    assert laudo["conforme"] is True          # nada BLOQUEIA
+    assert laudo["lacunas"] == []
+    assert len(laudo["observacoes"]) == 2     # ...e nada foi escondido
+
+
+def test_so_com_observacoes_o_atestado_E_emitido(tmp_path, monkeypatch):
+    """O ponta a ponta da correção: o estado real do alvo hoje passa a emitir atestado."""
+    rs = _ruleset_branch(rules=[
+        {"type": "pull_request", "parameters": {"require_code_owner_review": False,
+                                                "required_approving_review_count": 0}},
+        {"type": "non_fast_forward"}])
+    monkeypatch.setenv("GITHUB_TOKEN", "tok")
+    monkeypatch.setattr(vr, "coletar", lambda *a, **k: ([_ruleset(), rs], {}))
+    laudo, atestado = tmp_path / "l.json", tmp_path / "a.json"
+    assert vr.main(["--repo", "o/r", "--laudo", str(laudo), "--atestado", str(atestado)]) == 0
+    assert atestado.exists()
+    assert len(json.loads(laudo.read_text())["laudo"]["observacoes"]) == 2
