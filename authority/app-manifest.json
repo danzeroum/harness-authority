@@ -1,0 +1,15 @@
+{
+  "name": "harness-authority",
+  "description": "Autoridade externa de proteção de refs do danzeroum/project. Audita de fora e emite atestado.",
+  "url": "https://github.com/danzeroum/harness-authority",
+  "public": false,
+  "hook_attributes": { "active": false },
+  "redirect_url": "http://127.0.0.1:8765/callback",
+  "default_events": [],
+  "default_permissions": {
+    "metadata": "read",
+    "administration": "read",
+    "contents": "write",
+    "pull_requests": "write"
+  }
+}

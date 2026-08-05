@@ -85,15 +85,27 @@ evidência das auditorias anteriores. A autoridade **propõe**; quem integra é 
 Com `harness.yaml:external_audit.enabled: true`, o molde exige o atestado: ausente, ilegível, fora
 do schema ou expirado **bloqueia**.
 
-## O que falta para isto virar autoridade de fato
+## Criar o App
 
-Duas coisas, e as duas são de admin — nenhuma é código:
+As permissões do App são **declaradas** em `authority/app-manifest.json`, não digitadas numa
+página. Permissão marcada a mais numa web form não avisa ninguém; num arquivo versionado, ela
+aparece em diff.
 
-1. **Ligar os rulesets** no `danzeroum/project` (hoje as tags não têm nenhum; é a lacuna que o
-   laudo registra).
-2. **Tornar obrigatório**, em ruleset da `main` com bypass vazio, o check desta autoridade.
-   **Sem este passo, o atestado é registro e não trava** — quem pode mergear no molde escreveria
-   qualquer JSON no lugar dele.
+```bash
+python authority/criar_app.py
+```
+
+O script sobe um servidor local, abre a página do GitHub já preenchida pelo manifesto, recebe o
+`code` da volta (conferindo o `state`), troca por `app_id` + chave privada e grava os dois secrets
+— **sem a chave passar por disco**. Um `.pem` em `~/Downloads` é uma chave de vida longa num
+diretório que ninguém limpa.
+
+Sobra um passo manual, e ele é manual de propósito: **instalar** o App no `danzeroum/project`.
+Instalar é conceder acesso, e conceder acesso é decisão de quem pode concedê-la.
+
+`administration` é **read**, nunca write: quem pode mudar o ruleset não pode testemunhar sobre
+ele. Um auditor com poder de escrita sobre o que audita é um auditor que pode consertar o que
+deveria reportar.
 
 ## Uma lacuna conhecida, declarada em vez de escondida
 

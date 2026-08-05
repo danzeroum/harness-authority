@@ -532,3 +532,46 @@ def test_so_com_observacoes_o_atestado_E_emitido(tmp_path, monkeypatch):
     assert vr.main(["--repo", "o/r", "--laudo", str(laudo), "--atestado", str(atestado)]) == 0
     assert atestado.exists()
     assert len(json.loads(laudo.read_text())["laudo"]["observacoes"]) == 2
+
+
+# --------------------------------------------------------------------------------------
+# O manifesto do App — permissões declaradas, não digitadas
+# --------------------------------------------------------------------------------------
+
+def test_o_manifesto_pede_o_minimo_e_nada_alem():
+    """Permissão marcada a mais numa página web não avisa ninguém. Declarada em arquivo, ela
+    aparece em diff — e é por isso que o manifesto existe."""
+    from authority import criar_app
+
+    m = json.loads(criar_app.MANIFESTO.read_text(encoding="utf-8"))
+    assert m["default_permissions"] == {
+        "metadata": "read",          # ler o repositório
+        "administration": "read",    # ler rulesets e branch protection — NUNCA write
+        "contents": "write",         # escrever o atestado na branch da proposta
+        "pull_requests": "write",    # abrir o PR de entrega
+    }
+    assert m["public"] is False
+    assert m["hook_attributes"]["active"] is False
+    assert m["default_events"] == []
+
+
+def test_a_autoridade_nao_pede_ADMINISTRATION_write():
+    """A distinção que separa auditor de administrador: quem pode MUDAR o ruleset não pode
+    testemunhar sobre ele. Um auditor com poder de escrita sobre o que audita é um auditor que
+    pode consertar o que deveria reportar."""
+    from authority import criar_app
+
+    m = json.loads(criar_app.MANIFESTO.read_text(encoding="utf-8"))
+    assert m["default_permissions"]["administration"] == "read"
+
+
+def test_a_pagina_leva_o_manifesto_e_o_state():
+    """O `state` é conferido na volta: sem ele, qualquer aba aberta no navegador poderia entregar
+    o `code` de OUTRO App a este script, e o secret gravado seria a credencial de algo que você
+    não criou."""
+    from authority import criar_app
+
+    html = criar_app.montar_pagina({"name": "x"}, "ESTADO-123")
+    assert "state=ESTADO-123" in html
+    assert "https://github.com/settings/apps/new" in html
+    assert '\\"name\\": \\"x\\"' in html or '{\\"name\\":' in html
