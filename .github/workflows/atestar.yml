@@ -113,6 +113,14 @@ jobs:
           git config user.name "harness-authority"
           git config user.email "authority@users.noreply.github.com"
           git add atestados/
+          # A verificação que faltava. `git add` de um caminho IGNORADO não adiciona nada e não
+          # reclama — foi assim que um .gitignore mal ancorado fez este passo reportar sucesso sem
+          # registrar laudo nenhum. Exigir que o arquivo esteja rastreado transforma o silêncio em
+          # falha.
+          git ls-files --error-unmatch atestados/laudo.json > /dev/null || {
+            echo "::error::o laudo existe mas não foi rastreado — quase sempre .gitignore. Registro que não acontece é pior que registro ausente, porque o passo fica verde."
+            exit 1
+          }
           git diff --cached --quiet && { echo "laudo idêntico ao anterior"; exit 0; }
           git commit -m "laudo de proteção — $(date -u +%Y-%m-%dT%H:%MZ)"
           git push

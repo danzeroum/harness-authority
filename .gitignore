@@ -1,6 +1,11 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-regras*.json
-atestado*.json
-laudo*.json
+
+# ANCORADOS NA RAIZ, e a barra inicial é a correção de um bug real: sem ela, `laudo*.json`
+# casava também `atestados/laudo.json` — a saída do workflow. O passo que registra o laudo fazia
+# `git add`, não adicionava nada, e reportava sucesso. Um passo que diz ter feito e não fez é pior
+# que um que falha.
+/regras*.json
+/atestado*.json
+/laudo*.json

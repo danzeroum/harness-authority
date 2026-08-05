@@ -602,3 +602,16 @@ def test_a_pagina_leva_o_manifesto_e_o_state():
     html = criar_app.montar_pagina({"name": "x"}, "ESTADO-123")
     assert "state=ESTADO-123" in html
     assert "https://github.com/settings/apps/new" in html
+
+
+def test_o_gitignore_nao_engole_a_saida_do_workflow():
+    """O padrão `laudo*.json` sem barra inicial casava `atestados/laudo.json` — a saída do
+    workflow. O `git add` não adicionava nada, não reclamava, e o passo ficava verde sem ter
+    registrado laudo algum.
+
+    Os padrões dos arquivos de trabalho local ficam ANCORADOS na raiz.
+    """
+    linhas = [l.strip() for l in (RAIZ / ".gitignore").read_text(encoding="utf-8").splitlines()]
+    for nome in ("regras", "atestado", "laudo"):
+        assert f"/{nome}*.json" in linhas, f"{nome}*.json precisa de barra inicial"
+        assert f"{nome}*.json" not in linhas
