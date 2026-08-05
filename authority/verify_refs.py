@@ -86,6 +86,67 @@ def _cobre(ruleset: dict, tag_glob: str) -> bool:
     return any(i in ("~ALL", "refs/tags/**", f"refs/tags/{tag_glob}") for i in inclui)
 
 
+def _cobre_branch(ruleset: dict, branch: str) -> bool:
+    inclui = ((ruleset.get("conditions") or {}).get("ref_name") or {}).get("include") or []
+    return any(i in ("~ALL", "~DEFAULT_BRANCH", "refs/heads/**", f"refs/heads/{branch}")
+               for i in inclui)
+
+
+def _protecao_por_ruleset(rulesets: list[dict], exigidas: dict) -> tuple[list[dict], bool]:
+    """A `main` protegida por RULESET. Devolve (lacunas, havia_ruleset).
+
+    Existe porque a primeira versão deste verificador só olhava
+    `GET /branches/{b}/protection` — a API CLÁSSICA — e essa responde 404 quando a branch está
+    protegida por ruleset. Rodando contra o alvo real, ele acusou BRANCH-SEM-PROTECAO numa branch
+    que está protegida, e mandaria o dono criar proteção clássica duplicando o ruleset existente.
+
+    Um verificador que aponta a lacuna errada é pior que um que não aponta nada: o primeiro é
+    ignorado, o segundo faz alguém trabalhar no lugar errado e sair convencido de ter consertado.
+    """
+    branch = exigidas["branch"]
+    cobrem = [r for r in rulesets
+              if r.get("target") == "branch" and r.get("enforcement") == "active"
+              and _cobre_branch(r, branch)]
+    if not cobrem:
+        return [], False
+
+    lacunas: list[dict] = []
+    for rs in cobrem:
+        nome = rs.get("name") or f"ruleset:{rs.get('id')}"
+        regras = {r.get("type"): (r.get("parameters") or {}) for r in (rs.get("rules") or [])}
+
+        if "pull_request" not in regras:
+            lacunas.append({
+                "codigo": "BRANCH-SEM-REVIEW", "alvo": nome,
+                "detalhe": "o ruleset não exige pull request — sem isso, um push direto atravessa "
+                           "toda a governança declarada.",
+            })
+        elif exigidas["branch_exige_review_de_code_owner"] and not regras["pull_request"].get(
+                "require_code_owner_review"):
+            lacunas.append({
+                "codigo": "BRANCH-SEM-CODE-OWNER", "alvo": nome,
+                "detalhe": "o ruleset exige pull request, mas não review de CODE OWNER — é o elo "
+                           "que faz protected_paths significar alguma coisa; sem ele, qualquer "
+                           "aprovador serve para mudar um fiscal.",
+            })
+
+        if exigidas["branch_proibe_force_push"] and "non_fast_forward" not in regras:
+            lacunas.append({
+                "codigo": "BRANCH-FORCE-PUSH", "alvo": nome,
+                "detalhe": "o ruleset não bloqueia force push — histórico reescrevível torna "
+                           "qualquer âncora por commit uma afirmação sobre conteúdo que pode ter "
+                           "mudado.",
+            })
+
+        if exigidas["bypass_deve_ser_vazio"] and rs.get("bypass_actors"):
+            lacunas.append({
+                "codigo": "BRANCH-BYPASS-NAO-VAZIO", "alvo": nome,
+                "detalhe": "bypass list não-vazia — quem pode bypassar atravessa a revisão, e a "
+                           "trava passa a valer só para quem não precisaria dela.",
+            })
+    return lacunas, True
+
+
 def verificar(*, rulesets: list[dict], protection: dict, exigidas: dict) -> list[dict]:
     """As lacunas entre o exigido e o real. Lista vazia = tudo que se exige está ligado.
 
@@ -143,13 +204,21 @@ def verificar(*, rulesets: list[dict], protection: dict, exigidas: dict) -> list
                            "quem não precisaria dela.",
             })
 
-    # ---- eixo de BRANCH: a main é protegida? -----------------------------------------
+    # ---- eixo de BRANCH: a main é protegida, por QUALQUER um dos dois mecanismos? -----
+    #
+    # São dois, e confundi-los custou um falso positivo contra o alvo real: `ruleset` e a
+    # `branch protection` clássica. `GET /branches/{b}/protection` responde 404 quando a branch
+    # está protegida por ruleset — a ausência na API clássica não é ausência de proteção.
+    por_ruleset, havia_ruleset = _protecao_por_ruleset(rulesets, exigidas)
+    if havia_ruleset:
+        return lacunas + por_ruleset
+
     if not protection:
         lacunas.append({
             "codigo": "BRANCH-SEM-PROTECAO", "alvo": branch,
-            "detalhe": "a branch não tem proteção alguma configurada, e o harness.yaml do alvo "
-                       "declara CODEOWNERS + branch protection como o fiscal REAL dos "
-                       "protected_paths.",
+            "detalhe": "a branch não tem ruleset ATIVO nem branch protection clássica, e o "
+                       "harness.yaml do alvo declara CODEOWNERS + branch protection como o fiscal "
+                       "REAL dos protected_paths.",
         })
         return lacunas
 
@@ -282,7 +351,9 @@ def coletar(repository: str, token: str, exigidas: dict) -> tuple[list[dict], di
 
     detalhados = []
     for rs in lista:
-        if rs.get("target") != "tag":
+        # TAG e BRANCH. Filtrar só `tag` aqui foi o que cegou a primeira versão para a proteção
+        # da main por ruleset — e produziu um BRANCH-SEM-PROTECAO falso contra o alvo real.
+        if rs.get("target") not in ("tag", "branch"):
             continue
         # Duas chamadas porque a listagem devolve resumo SEM `rules`, e decidir sobre um ruleset
         # a partir do nome dele é decidir a partir de como alguém o chamou.

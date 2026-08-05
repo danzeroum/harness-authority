@@ -125,6 +125,68 @@ def test_branch_sem_protecao_para_de_perguntar():
     assert _codigos(_verificar(protection={})) == {"BRANCH-SEM-PROTECAO"}
 
 
+# ---- os dois mecanismos de proteção de branch, e o falso positivo que eles custaram -----
+
+def _ruleset_branch(**kw) -> dict:
+    base = {
+        "id": 777, "name": "main protegida", "target": "branch", "enforcement": "active",
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"]}},
+        "rules": [
+            {"type": "pull_request", "parameters": {"require_code_owner_review": True}},
+            {"type": "non_fast_forward"},
+        ],
+        "bypass_actors": [],
+    }
+    base.update(kw)
+    return base
+
+
+def test_branch_protegida_por_RULESET_sem_protecao_classica_e_conforme():
+    """O falso positivo que o alvo real revelou, agora em teste.
+
+    `GET /branches/{b}/protection` responde 404 quando a branch está protegida por RULESET — são
+    dois mecanismos distintos, e a ausência na API clássica não é ausência de proteção. A primeira
+    versão acusou BRANCH-SEM-PROTECAO numa main protegida, e mandaria o dono criar proteção
+    clássica duplicando o ruleset existente.
+
+    Um verificador que aponta a lacuna ERRADA é pior que um que não aponta nada: o primeiro é
+    ignorado, o segundo faz alguém trabalhar no lugar errado e sair convencido de ter consertado.
+    """
+    assert _verificar(rulesets=[_ruleset(), _ruleset_branch()], protection={}) == []
+
+
+def test_ruleset_de_branch_sem_code_owner_e_acusado():
+    rs = _ruleset_branch(rules=[{"type": "pull_request", "parameters": {}},
+                                {"type": "non_fast_forward"}])
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {
+        "BRANCH-SEM-CODE-OWNER"}
+
+
+def test_ruleset_de_branch_sem_pull_request_e_acusado():
+    rs = _ruleset_branch(rules=[{"type": "non_fast_forward"}])
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {"BRANCH-SEM-REVIEW"}
+
+
+def test_ruleset_de_branch_sem_bloqueio_de_force_push_e_acusado():
+    rs = _ruleset_branch(rules=[{"type": "pull_request",
+                                 "parameters": {"require_code_owner_review": True}}])
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {"BRANCH-FORCE-PUSH"}
+
+
+def test_ruleset_de_branch_com_bypass_e_acusado():
+    rs = _ruleset_branch(bypass_actors=[{"actor_id": 1}])
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {
+        "BRANCH-BYPASS-NAO-VAZIO"}
+
+
+def test_ruleset_de_branch_desativado_nao_conta_e_cai_na_classica():
+    """Desativado é como não existir — e aí a pergunta volta para a proteção clássica."""
+    rs = _ruleset_branch(enforcement="disabled")
+    assert _codigos(_verificar(rulesets=[_ruleset(), rs], protection={})) == {
+        "BRANCH-SEM-PROTECAO"}
+    assert _verificar(rulesets=[_ruleset(), rs], protection=_protection()) == []
+
+
 def test_review_sem_code_owner_e_acusado():
     p = _protection(required_pull_request_reviews={"require_code_owner_reviews": False})
     assert _codigos(_verificar(protection=p)) == {"BRANCH-SEM-CODE-OWNER"}
