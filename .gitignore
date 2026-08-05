@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+regras*.json
+atestado*.json
+laudo*.json
