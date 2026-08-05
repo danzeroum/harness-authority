@@ -44,7 +44,12 @@ jobs:
             echo "::error::sem APP_ID/PRIVATE_KEY — a autoridade não tem como olhar o alvo, e sem olhar não atesta. Indeterminado por desenho."
             exit 1
           fi
-          python - <<'PY' >> "$GITHUB_ENV"
+          # SEM redirecionar a saída para $GITHUB_ENV, e a distinção custou um run: o arquivo de
+          # ambiente só aceita linhas `CHAVE=valor`, enquanto `::add-mask::` é COMANDO DE WORKFLOW
+          # e pertence ao log. Mandar os dois pelo mesmo cano faz o runner recusar o arquivo
+          # inteiro com "Invalid format". Cada canal recebe o que é dele: o comando vai para a
+          # saída padrão, as variáveis são escritas direto no arquivo.
+          python - <<'PY'
           import os, sys
           from authority.app_token import cunhar, NaoAlcanca
           try:
@@ -53,11 +58,14 @@ jobs:
           except NaoAlcanca as exc:
               # Sem credencial que alcance o alvo, NADA é emitido — e o motivo vai numa frase, não
               # num traceback. O atestado anterior expira em ≤25h e o molde bloqueia sozinho.
-              print(f"::error::{exc}", file=sys.stderr)
+              print(f"::error::{exc}")
               sys.exit(1)
+          # Mascarar ANTES de qualquer coisa que pudesse ecoar o valor.
           print(f"::add-mask::{token}")
-          print(f"ALVO_TOKEN={token}")
-          print(f"ISSUER_IDENTITY={slug}")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as fh:
+              fh.write(f"ALVO_TOKEN={token}\n")
+              fh.write(f"ISSUER_IDENTITY={slug}\n")
+          print(f"✓ credencial cunhada; emissor: {slug}")
           PY
 
       # DEPOIS da cunhagem, e de propósito: assim a única credencial desta autoridade é a do App.
