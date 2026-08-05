@@ -577,6 +577,22 @@ def test_a_autoridade_nao_pede_ADMINISTRATION_write():
     assert m["default_permissions"]["administration"] == "read"
 
 
+def test_a_pagina_nao_depende_de_javascript():
+    """O que está no `value` é o que o navegador envia.
+
+    A primeira versão montava o campo por script, como o exemplo da documentação do GitHub — e o
+    GitHub recusou com `Error "url" wasn\'t supplied` mesmo com o `url` presente e o HTML impresso
+    correto. Sintoma de manifesto que chega vazio, não de manifesto errado. Um caminho com menos
+    peças tem menos lugares onde a diferença entre o visto e o enviado possa se esconder.
+    """
+    from authority import criar_app
+
+    html = criar_app.montar_pagina({"name": "x", "url": "https://e.com"}, "S")
+    assert "<script" not in html
+    assert 'name="manifest" value="' in html
+    assert "&quot;url&quot;: &quot;https://e.com&quot;" in html
+
+
 def test_a_pagina_leva_o_manifesto_e_o_state():
     """O `state` é conferido na volta: sem ele, qualquer aba aberta no navegador poderia entregar
     o `code` de OUTRO App a este script, e o secret gravado seria a credencial de algo que você
@@ -586,4 +602,3 @@ def test_a_pagina_leva_o_manifesto_e_o_state():
     html = criar_app.montar_pagina({"name": "x"}, "ESTADO-123")
     assert "state=ESTADO-123" in html
     assert "https://github.com/settings/apps/new" in html
-    assert '\\"name\\": \\"x\\"' in html or '{\\"name\\":' in html

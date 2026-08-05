@@ -37,17 +37,15 @@ RAIZ = Path(__file__).resolve().parent
 MANIFESTO = RAIZ / "app-manifest.json"
 
 _PAGINA = """<!doctype html><meta charset="utf-8"><title>criar o App</title>
-<body style="font-family:system-ui;max-width:40rem;margin:4rem auto;line-height:1.6">
-<h2>Criando o GitHub App a partir do manifesto</h2>
-<p>Se a página do GitHub não abrir sozinha, clique no botão.</p>
-<form id="f" method="post" action="https://github.com/settings/apps/new?state={state}">
-  <input type="hidden" name="manifest" id="m">
-  <button type="submit" style="font-size:1rem;padding:.6rem 1rem">Abrir o GitHub</button>
+<body style="font-family:system-ui;max-width:44rem;margin:3rem auto;line-height:1.6">
+<h2>Criar o GitHub App a partir do manifesto</h2>
+<p>Confira o que será enviado e clique. <b>Sem JavaScript</b>: o valor já está no formulário —
+a primeira versão montava o campo por script, e o que chegava ao GitHub não era o que se via aqui.</p>
+<form method="post" action="https://github.com/settings/apps/new?state={state}">
+  <input type="hidden" name="manifest" value="{manifesto}">
+  <button type="submit" style="font-size:1rem;padding:.6rem 1.2rem">Criar no GitHub</button>
 </form>
-<script>
-  document.getElementById("m").value = {manifesto};
-  document.getElementById("f").submit();
-</script>
+<pre style="background:#f6f8fa;padding:1rem;overflow:auto;font-size:.85rem">{legivel}</pre>
 </body>"""
 
 _FIM = """<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;margin:4rem">
@@ -55,8 +53,22 @@ _FIM = """<!doctype html><meta charset="utf-8"><body style="font-family:system-u
 
 
 def montar_pagina(manifesto: dict, state: str) -> str:
-    """O HTML que faz o POST. O manifesto entra como JSON dentro de JSON — daí o duplo dump."""
-    return _PAGINA.format(state=state, manifesto=json.dumps(json.dumps(manifesto)))
+    """O HTML que faz o POST, renderizado NO SERVIDOR e sem JavaScript.
+
+    A primeira versão montava o campo por script (`input.value = "..."`), como o exemplo da
+    documentação do GitHub. O GitHub recusava com `Error "url" wasn\'t supplied` mesmo com o `url`
+    presente e o HTML impresso correto — sintoma de manifesto que chega vazio ou truncado, não de
+    manifesto errado.
+
+    Sem script não há essa dúvida: o que está no `value` é o que o navegador envia, e é o mesmo
+    texto que a página mostra embaixo. Um caminho com menos peças tem menos lugares onde a
+    diferença entre o visto e o enviado possa se esconder.
+    """
+    import html as _html
+
+    bruto = json.dumps(manifesto, ensure_ascii=False)
+    return _PAGINA.format(state=state, manifesto=_html.escape(bruto, quote=True),
+                          legivel=_html.escape(json.dumps(manifesto, indent=2, ensure_ascii=False)))
 
 
 def converter(code: str) -> dict:
@@ -137,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
 
     inicio = f"http://127.0.0.1:{args.porta}/"
     print(f"1. abrindo {inicio}")
-    print("2. confirme a criação no GitHub (nome e permissões já vêm do manifesto)")
+    print('2. confira o manifesto na página e clique em "Criar no GitHub"')
+    print(json.dumps(manifesto, indent=2, ensure_ascii=False))
     webbrowser.open(inicio)
 
     if not pronto.wait(timeout=600):
