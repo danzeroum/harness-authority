@@ -66,23 +66,47 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     sha_base = base["object"]["sha"]
 
-    # Cria a branch, ou a realinha na base atual. Realinhar é o que impede o PR de acumular um
-    # diff de conteúdo antigo quando a main andou entre duas execuções do cron.
+    # O COMMIT É MONTADO ANTES DE A REF SE MEXER, e essa ordem é a correção de um defeito real.
+    #
+    # A primeira versão fazia dois passos: realinhava a branch na base (PATCH force) e só depois
+    # escrevia o arquivo. No instante entre um e outro, a branch ficava IDÊNTICA à base — e o
+    # GitHub fecha automaticamente um PR cuja head não difere mais da base. O PR #47 morreu assim,
+    # e a execução seguinte abriu o #49 sem que ninguém entendesse por quê. Um estado intermediário
+    # que só existe por microssegundos ainda é um estado, e alguém observa.
+    #
+    # Aqui a ref só muda uma vez, e nunca para um valor igual à base: o blob, a árvore e o commit
+    # são criados primeiro, com a base como pai.
+    blob = _api(f"{API}/repos/{args.repo}/git/blobs", token, "POST",
+                {"content": b64, "encoding": "base64"})
+    if blob is None:
+        print("• indeterminado: o blob do atestado não pôde ser criado.", file=sys.stderr)
+        return 3
+
+    arvore = _api(f"{API}/repos/{args.repo}/git/trees", token, "POST",
+                  {"base_tree": sha_base,
+                   "tree": [{"path": args.caminho, "mode": "100644", "type": "blob",
+                             "sha": blob["sha"]}]})
+    if arvore is None:
+        print("• indeterminado: a árvore não pôde ser criada.", file=sys.stderr)
+        return 3
+
+    commit = _api(f"{API}/repos/{args.repo}/git/commits", token, "POST",
+                  {"message": "autoridade: atestado de proteção de refs",
+                   "tree": arvore["sha"], "parents": [sha_base]})
+    if commit is None:
+        print("• indeterminado: o commit não pôde ser criado.", file=sys.stderr)
+        return 3
+
+    if commit["tree"]["sha"] == _api(f"{API}/repos/{args.repo}/git/commits/{sha_base}",
+                                     token)["tree"]["sha"]:
+        print("✓ atestado idêntico ao que já está na base — nada a propor.")
+        return 0
+
     ref = _api(f"{API}/repos/{args.repo}/git/refs", token, "POST",
-               {"ref": f"refs/heads/{BRANCH}", "sha": sha_base})
+               {"ref": f"refs/heads/{BRANCH}", "sha": commit["sha"]})
     if ref is None:
         _api(f"{API}/repos/{args.repo}/git/refs/heads/{BRANCH}", token, "PATCH",
-             {"sha": sha_base, "force": True})
-
-    atual = _api(f"{API}/repos/{args.repo}/contents/{args.caminho}?ref={BRANCH}", token)
-    corpo = {"message": "autoridade: atestado de proteção de refs",
-             "content": b64, "branch": BRANCH}
-    if atual and atual.get("sha"):
-        if atual.get("content", "").replace("\n", "") == b64:
-            print("✓ atestado idêntico ao que já está na branch — nada a propor.")
-            return 0
-        corpo["sha"] = atual["sha"]
-    _api(f"{API}/repos/{args.repo}/contents/{args.caminho}", token, "PUT", corpo)
+             {"sha": commit["sha"], "force": True})
 
     abertos = _api(f"{API}/repos/{args.repo}/pulls?head={args.repo.split('/')[0]}:{BRANCH}"
                    f"&state=open", token) or []
