@@ -1,0 +1,31 @@
+{
+  "laudo": {
+    "checked_at": "2026-08-05T19:15:49+00:00",
+    "config_digest": "sha256:cda8ce09474a0285160b81c08092767043d213d249394dd8764c43550c892094",
+    "conforme": true,
+    "lacunas": [],
+    "observacoes": [
+      {
+        "alvo": "main — governanca fail-closed",
+        "classe": "observacao",
+        "codigo": "BRANCH-SEM-APROVACAO-EXIGIDA",
+        "detalhe": "o ruleset exige pull request mas aceita 0 aprovação(ões) — um PR pode ser integrado pelo próprio autor sem que ninguém tenha olhado. Exigir PR sem exigir aprovação move o trabalho de lugar sem acrescentar um par de olhos.",
+        "dispensa_porque": "mesma aritmética: uma contagem mínima de aprovações só é satisfazível por alguém que não seja o autor.",
+        "dispensada_ate": "2026-11-03",
+        "risco": "RISK-CHANGE-002"
+      },
+      {
+        "alvo": "main — governanca fail-closed",
+        "classe": "observacao",
+        "codigo": "BRANCH-SEM-CODE-OWNER",
+        "detalhe": "o ruleset exige pull request, mas não review de CODE OWNER — é o elo que faz protected_paths significar alguma coisa; sem ele, qualquer aprovador serve para mudar um fiscal.",
+        "dispensa_porque": "não há revisor humano independente: o único colaborador é também o autor de todas as propostas. Exigir aprovação aqui trancaria a main para a única pessoa que pode destrancá-la — quatro olhos exigem duas pessoas.",
+        "dispensada_ate": "2026-11-03",
+        "risco": "RISK-CHANGE-002"
+      }
+    ],
+    "repository": "danzeroum/project",
+    "verifier_version": "1.0"
+  },
+  "schema_version": "1.0"
+}
