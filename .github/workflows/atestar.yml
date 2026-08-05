@@ -27,16 +27,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # O schema do atestado é lido do CHECKOUT do molde, nunca de uma cópia daqui: uma cópia
-      # derivaria no primeiro dia em que o molde mudasse o contrato, e este verificador passaria a
-      # emitir documentos que o consumidor recusa — os dois lados convencidos de estarem certos.
-      - name: Trazer o molde (só para ler o schema)
-        uses: actions/checkout@v4
-        with:
-          repository: danzeroum/project
-          path: molde
-          token: ${{ secrets.PROJECT_READ_TOKEN || github.token }}
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -62,6 +52,20 @@ jobs:
           print(f"ALVO_TOKEN={token}")
           print(f"ISSUER_IDENTITY={slug}")
           PY
+
+      # DEPOIS da cunhagem, e de propósito: assim a única credencial desta autoridade é a do App.
+      # Um PAT separado só para clonar seria uma segunda chave de vida longa a guardar, girar e
+      # esquecer — e credencial esquecida é credencial de alguém.
+      #
+      # O schema do atestado é lido do CHECKOUT do molde, nunca de uma cópia daqui: uma cópia
+      # derivaria no primeiro dia em que o molde mudasse o contrato, e este verificador passaria a
+      # emitir documentos que o consumidor recusa — os dois lados convencidos de estarem certos.
+      - name: Trazer o molde (só para ler o schema)
+        uses: actions/checkout@v4
+        with:
+          repository: danzeroum/project
+          path: molde
+          token: ${{ env.ALVO_TOKEN }}
 
       # Exit 0 = limpo (laudo + atestado) · 1 = lacuna (laudo, SEM atestado) · 3 = indeterminado.
       # O `continue-on-error` existe para que a lacuna produza laudo publicado em vez de matar o
