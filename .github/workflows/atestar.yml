@@ -18,7 +18,7 @@ on:
     # `authority/verify_refs.py` DERIVA a validade desta cadência (CADENCIA × CICLOS_TOLERADOS),
     # e não o contrário. Mexer aqui sem mexer lá reabre exatamente o buraco que isto fecha —
     # `test_validade_tolera_ciclos_perdidos` amarra as duas pontas.
-    - cron: "17 */6 * * *"
+    - cron: "17 6 */3 * *"
   workflow_dispatch:
 
 permissions:

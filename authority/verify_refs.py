@@ -62,9 +62,23 @@ VERIFIER_VERSION = "1.0"
 # seguidos. O excedente continua sendo a decisão — ele apenas passou a ser calibrado contra o
 # atraso real do agendador em vez de contra o intervalo nominal. Um verificador que parou de rodar
 # de verdade ainda expira, e continua expirando dentro do mesmo dia.
-CADENCIA = timedelta(hours=6)
-CICLOS_TOLERADOS = 4
-VALIDADE = CADENCIA * CICLOS_TOLERADOS + timedelta(hours=2)
+# AFROUXADA na CP-046, e afrouxar NÃO é desligar — a distinção é a decisão inteira.
+#
+# Com cadência de 6h e a caixa `Allow auto-merge` desmarcada no alvo, cada ciclo abria um PR que
+# esperava por um humano, e o atestado vencia em 26h. Em dois dias isso bloqueou o molde duas vezes
+# e gerou quatro PRs. A trava não estava errada: ela cobrava, com frequência diária, uma
+# configuração administrativa que só o dono pode ligar. E aviso que vira ruído tem um remédio
+# conhecido e péssimo, que é ser desligado.
+#
+# Três dias de intervalo, dois ciclos tolerados: o dono é lembrado a cada três dias e bloqueado se
+# ignorar por seis. É "grande o bastante para não ser ignorado", não "o maior possível" — o valor
+# de a trava falhar de vez em quando é provar que ela ainda funciona ANTES de alguém precisar dela.
+#
+# A margem continua calibrada contra o atraso REAL do agendador (2h34 medidos em 06/08), nunca
+# contra o intervalo nominal: foi confundir os dois que produziu a folga negativa da CP-044.
+CADENCIA = timedelta(days=3)
+CICLOS_TOLERADOS = 2
+VALIDADE = CADENCIA * CICLOS_TOLERADOS + timedelta(hours=6)
 
 EXIT_LACUNA = 1
 EXIT_UNVERIFIABLE = 3
