@@ -1,9 +1,9 @@
 {
   "attestation": {
     "branch": "main",
-    "checked_at": "2026-08-06T08:51:55+00:00",
+    "checked_at": "2026-08-07T07:39:35+00:00",
     "config_digest": "sha256:cda8ce09474a0285160b81c08092767043d213d249394dd8764c43550c892094",
-    "expires_at": "2026-08-07T09:51:55+00:00",
+    "expires_at": "2026-08-08T08:39:35+00:00",
     "issuer": {
       "identity": "harness-authority",
       "kind": "github_app"
