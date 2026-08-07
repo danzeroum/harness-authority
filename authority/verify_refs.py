@@ -45,10 +45,26 @@ from datetime import datetime, timedelta, timezone
 
 VERIFIER_VERSION = "1.0"
 
-# 25h para um cron diário, e o excedente é a decisão: uma execução perdida faz o atestado
-# anterior EXPIRAR em vez de continuar valendo. Uma janela folgada transformaria "o verificador
-# parou de rodar" em silêncio, que é exatamente o estado que este repositório existe para impedir.
-VALIDADE = timedelta(hours=25)
+# A folga é DERIVADA da cadência, e a aritmética estava errada — não por descuido, mas porque a
+# premissa "cron diário dispara diariamente" não sobreviveu ao campo.
+#
+# O desenho anterior era 25h para um cron diário: uma hora de excedente, o bastante para uma
+# execução perdida fazer o atestado EXPIRAR em vez de continuar valendo em silêncio. A intenção
+# continua certa e não muda aqui.
+#
+# O que mudou é a medida. O cron do GitHub Actions não é pontual: ele atrasa sob carga e às vezes
+# NÃO dispara. Medido neste repositório: o run declarado para 06:17Z de 06/08 saiu às 08:51Z —
+# 2h34 de atraso, mais que o dobro da folga inteira. E o de 07/08 não saiu. Uma folga de 1h contra
+# um atraso típico de 2h30 não é margem apertada, é margem NEGATIVA: o vencimento passa a medir a
+# pontualidade do agendador, não a saúde da proteção. Foi o que bloqueou o molde duas vezes.
+#
+# Agora a cadência é de 6 em 6 horas e a validade de 26h, o que tolera QUATRO ciclos perdidos
+# seguidos. O excedente continua sendo a decisão — ele apenas passou a ser calibrado contra o
+# atraso real do agendador em vez de contra o intervalo nominal. Um verificador que parou de rodar
+# de verdade ainda expira, e continua expirando dentro do mesmo dia.
+CADENCIA = timedelta(hours=6)
+CICLOS_TOLERADOS = 4
+VALIDADE = CADENCIA * CICLOS_TOLERADOS + timedelta(hours=2)
 
 EXIT_LACUNA = 1
 EXIT_UNVERIFIABLE = 3

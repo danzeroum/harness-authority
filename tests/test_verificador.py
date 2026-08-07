@@ -263,14 +263,32 @@ def test_o_atestado_tem_os_campos_que_o_schema_exige_com_os_nomes_dele():
     assert a["issuer"] == {"identity": "x", "kind": "github_app"}
 
 
-def test_a_validade_e_de_25h_para_um_cron_diario():
-    """O excedente é a decisão: uma execução perdida faz o atestado EXPIRAR em vez de continuar
-    valendo. Janela folgada transformaria 'o verificador parou' em silêncio."""
+def test_o_atestado_expira_e_a_folga_vem_da_cadencia():
+    """O excedente continua sendo a decisão; o que mudou foi contra o QUE ele é medido.
+
+    Antes: 25h fixas para um cron diário — uma hora de folga. A premissa era que um cron diário
+    dispara diariamente, e o campo a desmentiu: o run declarado para 06:17Z de 06/08 saiu às
+    08:51Z (2h34 tarde) e o de 07/08 não saiu. Uma hora de folga contra duas e meia de atraso é
+    margem negativa, e o vencimento passou a medir a pontualidade do agendador em vez da saúde da
+    proteção — o molde bloqueou por isso duas vezes.
+
+    Agora a folga é DERIVADA da cadência. O que este teste protege não é o número: é que o
+    atestado continue EXPIRANDO, e dentro de uma janela que um verificador realmente parado não
+    atravessa. Janela folgada demais transformaria "o verificador parou" em silêncio, que é o
+    estado que este repositório existe para impedir.
+    """
     agora = datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
     a = vr.montar_atestado(repository="o/r", exigidas=vr.EXIGIDAS_PADRAO, rulesets=[_ruleset()],
                            issuer_identity="x", agora=agora)["attestation"]
-    assert datetime.fromisoformat(a["expires_at"]) - datetime.fromisoformat(a["checked_at"]) \
-        == timedelta(hours=25)
+    janela = datetime.fromisoformat(a["expires_at"]) - datetime.fromisoformat(a["checked_at"])
+
+    assert janela == vr.VALIDADE, "o atestado precisa carregar a validade declarada, não outra"
+    assert janela == vr.CADENCIA * vr.CICLOS_TOLERADOS + timedelta(hours=2), (
+        "a folga é derivada da cadência — um número solto aqui volta a descolar as duas pontas")
+    # O TETO, que é o lado que ninguém lembra de testar: a folga existe para tolerar atraso do
+    # agendador, não para o atestado sobreviver a um verificador desligado por dias.
+    assert janela <= timedelta(hours=48), (
+        "acima de 48h o carimbo deixa de ser uma afirmação sobre hoje e vira memória")
 
 
 def test_ruleset_ref_e_referencia_e_nao_copia():

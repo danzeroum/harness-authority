@@ -9,9 +9,16 @@ name: atestar
 
 on:
   schedule:
-    # Diário. A validade do atestado é de 25h: o excedente de uma hora é o que transforma
-    # "o verificador não rodou" em "o atestado venceu", em vez de em silêncio.
-    - cron: "17 6 * * *"
+    # De 6 em 6 horas, e a cadência é derivada de uma MEDIDA, não de um gosto: o cron do Actions
+    # atrasa sob carga e às vezes não dispara. Aqui, o run declarado para 06:17Z de 06/08 saiu às
+    # 08:51Z — 2h34 tarde — e o de 07/08 não saiu. Com cadência diária e validade de 25h, a folga
+    # era de uma hora contra um atraso típico de duas e meia: o atestado passava a medir a
+    # pontualidade do agendador, e o molde bloqueava sozinho por isso. Aconteceu duas vezes.
+    #
+    # `authority/verify_refs.py` DERIVA a validade desta cadência (CADENCIA × CICLOS_TOLERADOS),
+    # e não o contrário. Mexer aqui sem mexer lá reabre exatamente o buraco que isto fecha —
+    # `test_validade_tolera_ciclos_perdidos` amarra as duas pontas.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
