@@ -129,3 +129,47 @@ def test_capacidade_ausente_vira_achado_com_a_acao_exata(info):
     assert motivo is not None
     assert "Allow auto-merge" in motivo
     assert "Settings" in motivo
+
+
+# --------------------------------------------------------------------------------------
+# A folga do atestado é derivada da cadência do cron — e as duas pontas precisam continuar atadas
+# --------------------------------------------------------------------------------------
+
+def test_validade_tolera_ciclos_perdidos():
+    """A validade não é um número escolhido: é `CADENCIA × CICLOS_TOLERADOS` mais um excedente.
+
+    O desenho anterior era 25h para um cron diário — uma hora de folga. O campo desmentiu a
+    premissa: o run declarado para 06:17Z de 06/08 saiu às 08:51Z (2h34 tarde) e o de 07/08 não
+    saiu. Folga de 1h contra atraso típico de 2h30 é margem NEGATIVA, e o vencimento passa a medir
+    a pontualidade do agendador em vez da saúde da proteção. O molde bloqueou por isso duas vezes.
+    """
+    from authority.verify_refs import CADENCIA, CICLOS_TOLERADOS, VALIDADE
+
+    assert VALIDADE > CADENCIA * CICLOS_TOLERADOS, (
+        "a validade precisa de excedente SOBRE os ciclos tolerados — sem ele, o quarto ciclo "
+        "perdido e o vencimento coincidem, e a corrida decide")
+    assert CICLOS_TOLERADOS >= 2, (
+        "tolerar menos de dois ciclos devolve o problema: um único cron perdido volta a bloquear")
+
+
+def test_o_cron_declarado_bate_com_a_cadencia_do_verificador():
+    """A trava contra a deriva silenciosa: mudar o YAML sem mudar o Python reabre o buraco.
+
+    São dois arquivos, duas linguagens e nenhum import entre eles — o tipo de par que deriva no
+    primeiro dia em que alguém mexe num lado só, e cuja divergência não produz erro nenhum: produz
+    um atestado que vence antes do próximo ciclo, meses depois, sem ninguém ligar uma coisa à outra.
+    """
+    import re
+    from pathlib import Path
+
+    from authority.verify_refs import CADENCIA
+
+    yml = Path(__file__).resolve().parent.parent / ".github/workflows/atestar.yml"
+    cron = re.search(r'cron:\s*"([^"]+)"', yml.read_text(encoding="utf-8"))
+    assert cron, "o workflow precisa declarar um cron"
+
+    hora = cron.group(1).split()[1]
+    assert hora.startswith("*/"), f"cadência esperada em horas (*/N), veio {hora!r}"
+    assert int(hora[2:]) == CADENCIA.total_seconds() / 3600, (
+        f"o cron dispara a cada {hora[2:]}h mas o verificador deriva a validade de "
+        f"{CADENCIA.total_seconds() / 3600:.0f}h — as duas pontas precisam bater")
