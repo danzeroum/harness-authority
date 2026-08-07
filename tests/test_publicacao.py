@@ -168,8 +168,23 @@ def test_o_cron_declarado_bate_com_a_cadencia_do_verificador():
     cron = re.search(r'cron:\s*"([^"]+)"', yml.read_text(encoding="utf-8"))
     assert cron, "o workflow precisa declarar um cron"
 
-    hora = cron.group(1).split()[1]
-    assert hora.startswith("*/"), f"cadência esperada em horas (*/N), veio {hora!r}"
-    assert int(hora[2:]) == CADENCIA.total_seconds() / 3600, (
-        f"o cron dispara a cada {hora[2:]}h mas o verificador deriva a validade de "
-        f"{CADENCIA.total_seconds() / 3600:.0f}h — as duas pontas precisam bater")
+    from datetime import timedelta
+
+    minuto, hora, dia_do_mes, mes, dia_da_semana = cron.group(1).split()
+
+    # O passo pode morar no campo de HORA ou no de DIA — e ler só um foi o defeito desta versão:
+    # ao afrouxar a cadência de 6h para 3 dias (CP-046), o passo mudou de campo e o teste quebrou
+    # por não saber ler, não por divergência real. Um fiscal que só enxerga uma forma da coisa que
+    # vigia reprova a mudança legítima e deixa passar a que ele não sabe representar.
+    if hora.startswith("*/"):
+        declarada = timedelta(hours=int(hora[2:]))
+    elif dia_do_mes.startswith("*/"):
+        declarada = timedelta(days=int(dia_do_mes[2:]))
+    else:
+        raise AssertionError(
+            f"o cron {cron.group(1)!r} não declara passo em hora nem em dia — sem passo não há "
+            f"cadência a comparar, e comparar contra nada aprovaria qualquer valor")
+
+    assert declarada == CADENCIA, (
+        f"o cron dispara a cada {declarada} mas o verificador deriva a validade de {CADENCIA} — "
+        f"as duas pontas precisam bater, e nada entre elas as obriga a isso além deste teste")

@@ -283,12 +283,23 @@ def test_o_atestado_expira_e_a_folga_vem_da_cadencia():
     janela = datetime.fromisoformat(a["expires_at"]) - datetime.fromisoformat(a["checked_at"])
 
     assert janela == vr.VALIDADE, "o atestado precisa carregar a validade declarada, não outra"
-    assert janela == vr.CADENCIA * vr.CICLOS_TOLERADOS + timedelta(hours=2), (
-        "a folga é derivada da cadência — um número solto aqui volta a descolar as duas pontas")
-    # O TETO, que é o lado que ninguém lembra de testar: a folga existe para tolerar atraso do
-    # agendador, não para o atestado sobreviver a um verificador desligado por dias.
-    assert janela <= timedelta(hours=48), (
-        "acima de 48h o carimbo deixa de ser uma afirmação sobre hoje e vira memória")
+
+    # A RELAÇÃO, não o número: a janela cobre os ciclos tolerados e sobra alguma folga. Escrever
+    # "+ 2h" aqui foi o que obrigou a editar este teste ao afrouxar a cadência na CP-046 — a
+    # terceira vez que um número copiado se voltou contra quem o copiou.
+    ciclos = vr.CADENCIA * vr.CICLOS_TOLERADOS
+    assert janela > ciclos, (
+        "sem folga SOBRE os ciclos tolerados, o último ciclo perdido e o vencimento coincidem e a "
+        "corrida decide")
+    assert janela - ciclos < vr.CADENCIA, (
+        "a folga é margem para atraso do agendador, não um ciclo extra disfarçado — se ela crescer "
+        "além de um intervalo, o número de ciclos tolerados na prática deixa de ser o declarado")
+
+    # O TETO NÃO MORA MAIS AQUI, e a mudança é de fronteira, não de rigor: quem autoriza a validade
+    # máxima é o repositório vigiado, em `harness.yaml:external_audit.cadence`, e
+    # `audit_governance.py::check_attestation_cadence` a confere contra este carimbo. Uma autoridade
+    # que declarasse o próprio teto estaria se autorizando — exatamente o que a camada externa
+    # existe para impedir.
 
 
 def test_ruleset_ref_e_referencia_e_nao_copia():
@@ -416,9 +427,12 @@ def test_atestado_expirado_bloqueia(molde_ligado):
     """Não é warning. Atestado sem validade seria carimbo eterno sobre configuração que pode ter
     mudado dez minutos depois da visita."""
     raiz, escrever = molde_ligado
-    ontem = datetime.now(timezone.utc) - timedelta(days=2)
+    # DERIVADO da validade, nunca um "ontem" literal: com a cadência afrouxada na CP-046 um
+    # carimbo de dois dias atrás passou a estar VÁLIDO, e o teste reprovava por medir o calendário
+    # em vez de medir a trava.
+    ha_muito = datetime.now(timezone.utc) - vr.VALIDADE - timedelta(hours=1)
     escrever(vr.montar_atestado(repository="danzeroum/project", exigidas=vr.EXIGIDAS_PADRAO,
-                                rulesets=[_ruleset()], issuer_identity="x", agora=ontem))
+                                rulesets=[_ruleset()], issuer_identity="x", agora=ha_muito))
     chaves = [a["id"] for a in _achados_de_conformidade(raiz)]
     assert "FIND-EXT-AUDIT-ATESTADO-EXPIRADO" in chaves, chaves
 
